@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>气象数据可视化</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <!-- Tailwind 配置 -->
+    <!-- 筛选对话框 -->
+    <div id="filterModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-primary">筛选气象站点</h3>
+                <button id="closeFilterBtn" class="text-gray-500 hover:text-gray-700">
+                    <i class="fa fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- 最冷月气温 -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">最冷月气温 (℃)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="minColdTemp" placeholder="最小值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                        <span>至</span>
+                        <input type="number" id="maxColdTemp" placeholder="最大值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                </div>
+                
+                <!-- 最热月气温 -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">最热月气温 (℃)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="minHotTemp" placeholder="最小值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                        <span>至</span>
+                        <input type="number" id="maxHotTemp" placeholder="最大值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                </div>
+                
+                <!-- 年降水量 -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">年降水量 (mm)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="minAnnualPrecip" placeholder="最小值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                        <span>至</span>
+                        <input type="number" id="maxAnnualPrecip" placeholder="最大值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                </div>
+                
+                <!-- 干旱指数 -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">干旱指数 (年降水量/最热月气温)</label>
+                    <div class="flex items-center gap-2">
+                        <input type="number" id="minAridityIndex" placeholder="最小值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                        <span>至</span>
+                        <input type="number" id="maxAridityIndex" placeholder="最大值" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="resetFilterBtn" class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
+                    重置
+                </button>
+                <button id="applyFilterBtn" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-blue-700">
+                    应用筛选
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右下角筛选按钮 -->
+    <div class="fixed bottom-4 right-4 z-20">
+        <button id="filterBtn" class="bg-secondary hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all flex items-center">
+            <i class="fa fa-filter mr-2"></i>筛选站点
+        </button>
+    </div>
+    
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1a4971',
+                        secondary: '#2a6f97',
+                        accent: '#f97316',
+                        temperature: '#ef4444',
+                        precipitation: '#3b82f6',
+                        dark: '#0f172a',
+                        light: '#f8fafc'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .map-container {
+                height: calc(100vh - 2rem);
+            }
+            .chart-container {
+                height: calc(100vh - 2rem);
+            }
+            .custom-scrollbar::-webkit-scrollbar {
+                width: 6px;
+            }
+            .custom-scrollbar::-webkit-scrollbar-track {
+                background: #f1f5f9;
+            }
+            .custom-scrollbar::-webkit-scrollbar-thumb {
+                background-color: #94a3b8;
+                border-radius: 3px;
+            }
+        }
+    </style>
+    
+    <style>
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        .leaflet-control-layers {
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .leaflet-popup-content-wrapper {
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .station-marker {
+            transition: all 0.2s ease;
+        }
+        .station-marker:hover {
+            transform: scale(1.2);
+        }
+        .station-marker.selected {
+            stroke: #f97316;
+            stroke-width: 3px;
+        }
+        .custom-file-upload {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .custom-file-upload input[type=file] {
+            position: absolute;
+            opacity: 0;
+            right: 0;
+            top: 0;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="container mx-auto p-4">
+        <header class="mb-4 flex flex-col md:flex-row md:items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-primary flex items-center">
+                    <i class="fa fa-cloud mr-2"></i>气象数据可视化平台
+                </h1>
+                <p class="text-sm text-gray-600">上传GeoJSON文件，查看和比较不同气象站点的温度和降水数据</p>
+            </div>
+            
+            <!-- 文件上传按钮 - 移到标题区域中间 -->
+            <label class="custom-file-upload bg-white hover:bg-gray-100 text-primary font-medium py-2 px-4 rounded-lg shadow-md transition-all flex items-center cursor-pointer mt-2 md:mt-0">
+                <i class="fa fa-upload mr-2"></i>上传GeoJSON
+                <input type="file" id="fileInput" accept=".geojson,.json" />
+            </label>
+        </header>
+        
+        <div class="flex flex-col lg:flex-row gap-4">
+            <!-- 左侧地图区域 -->
+            <div class="w-full lg:w-2/3 bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="relative map-container">
+                    <div id="map"></div>
+                    
+                    <!-- 地图控件 -->
+                    <div class="absolute top-4 right-4 z-10">
+                        <!-- 图层切换控件由Leaflet自动添加 -->
+                    </div>
+                    
+                    <!-- 文件上传按钮已移至标题区域 -->
+                    
+                    <!-- 提示信息 - 移到左下角避免与上传按钮重叠 -->
+                    <div id="mapInfo" class="absolute bottom-4 left-4 bg-white bg-opacity-90 p-3 rounded-lg shadow-md max-w-xs">
+                        <p class="text-sm"><i class="fa fa-info-circle text-primary mr-1"></i> 请上传GeoJSON文件以查看气象站点数据</p>
+                    </div>
+                </div>
+            </div>
+            
+    
+            <div class="w-full lg:w-1/3 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center">
+                    <h2 class="text-lg font-semibold text-primary">气候数据统计</h2>
+                    <div class="flex gap-2">
+                        <button id="exportDataBtn" class="bg-secondary hover:bg-blue-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-all flex items-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fa fa-file-excel-o mr-1"></i>导出数据
+                        </button>
+                        <button id="exportBtn" class="bg-accent hover:bg-orange-600 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-all flex items-center disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fa fa-download mr-1"></i>导出图表
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="selectedStations" class="p-4 border-b border-gray-200 max-h-32 overflow-y-auto custom-scrollbar">
+                    <p class="text-sm text-gray-500 italic">尚未选择任何站点</p>
+                </div>
+                
+                <div class="flex-grow p-4 flex items-center justify-center">
+                    <div class="w-full" style="max-width: 400px;">
+                        <div style="aspect-ratio: 5/7;">
+                            <canvas id="climateChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+    
+
+    <script>
+        // 全局变量
+        let map;
+        let geoJsonLayer = null;
+        let climateChart = null;
+        let selectedStations = [];
+        let stationMarkers = {};
+        let stationDataMap = {};
+        
+        // 颜色配置 - 确保不同站点有明显区分的配色
+        const stationColors = [
+            { temp: '#ef4444', precip: 'rgba(59, 130, 246, 0.7)' }, // 红色 - 蓝色
+            { temp: '#eab308', precip: 'rgba(16, 185, 129, 0.7)' }, // 黄色 - 绿色
+            { temp: '#8b5cf6', precip: 'rgba(236, 72, 153, 0.7)' }, // 紫色 - 粉色
+            { temp: '#06b6d4', precip: 'rgba(249, 115, 22, 0.7)' }, // 青色 - 橙色
+            { temp: '#10b981', precip: 'rgba(239, 68, 68, 0.7)' }   // 绿色 - 红色
+        ];
+        
+        // 初始化地图
+        function initMap() {
+            // 创建地图实例，默认以中国为中心
+            map = L.map('map', {
+                center: [35.0, 105.0],
+                zoom: 4,
+                zoomControl: false, // 稍后手动添加，避免与图层控制器重叠
+                attributionControl: false // 稍后手动添加
+            });
+            
+            // 添加缩放控件到左上角
+            L.control.zoom({
+                position: 'topleft'
+            }).addTo(map);
+            
+            // 添加属性控件
+            L.control.attribution({
+                position: 'bottomleft'
+            }).addTo(map);
+            
+            // 定义地图图层，优化加载参数
+            const layers = {
+                'ESRI Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+                    maxZoom: 18,
+                    tileSize: 256,
+                    zoomOffset: 0,
+                    updateWhenIdle: true,
+                    updateWhenZooming: false,
+                    reuseTiles: true,
+                    crossOrigin: true
+                }),
+                'Esri Terrain': L.tileLayer('https://server.arcgisonline.com/arcgis/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri &mdash; Source: USGS, Esri, TANA, DeLorme, and NPS',
+                    maxZoom: 13,
+                    tileSize: 256,
+                    updateWhenIdle: true,
+                    updateWhenZooming: false,
+                    reuseTiles: true,
+                    crossOrigin: true
+                }),
+                'World Dark Gray': L.tileLayer('https://services.arcgisonline.com/arcgis/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+                    maxZoom: 16,
+                    tileSize: 256,
+                    updateWhenIdle: true,
+                    updateWhenZooming: false,
+                    reuseTiles: true,
+                    crossOrigin: true
+                }),
+                'Relief Map': L.tileLayer('https://maps-for-free.com/layer/relief/z{z}/row{y}/{z}_{x}-{y}.jpg', {
+                    attribution: 'Tiles &copy; maps-for-free.com',
+                    maxZoom: 18,
+                    tileSize: 256,
+                    updateWhenIdle: true,
+                    updateWhenZooming: false,
+                    reuseTiles: true,
+                    crossOrigin: true
+                })
+            };
+            
+            // 添加图层加载状态监控
+            Object.keys(layers).forEach(layerName => {
+                const layer = layers[layerName];
+                
+                // 添加加载事件处理
+                layer.on('loading', function() {
+                    // 可以在这里添加加载指示器
+                    console.log(`Loading ${layerName}...`);
+                });
+                
+                layer.on('load', function() {
+                    console.log(`${layerName} loaded successfully`);
+                });
+                
+                layer.on('tileerror', function(err) {
+                    console.warn(`Tile error for ${layerName}:`, err);
+                });
+            });
+            
+            // 默认添加第一个图层
+            const defaultLayer = layers['ESRI Satellite'];
+            defaultLayer.addTo(map);
+            
+            // 添加图层控制器
+            L.control.layers(layers, null, {
+                position: 'topright',
+                collapsed: true,
+                autoZIndex: true
+            }).addTo(map);
+            
+            // 添加经纬网格图层
+            addGraticuleLayer();
+            
+            // 添加图层预加载机制
+            function preloadLayers() {
+                Object.keys(layers).forEach(layerName => {
+                    if (layerName !== 'ESRI Satellite') {
+                        const layer = layers[layerName];
+                        // 预加载当前视图的瓦片
+                        if (map && map.getBounds() && layer && typeof layer._loadTiles === 'function') {
+                            const bounds = map.getBounds();
+                            const zoom = map.getZoom();
+                            // 预加载当前缩放级别和相邻缩放级别的瓦片
+                            for (let z = Math.max(zoom - 1, 2); z <= Math.min(zoom + 1, layer.options.maxZoom); z++) {
+                                try {
+                                    layer._loadTiles(bounds, z, map);
+                                } catch (error) {
+                                    console.warn(`Failed to preload tiles for ${layerName}:`, error);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // 地图加载完成后开始预加载其他图层
+            map.on('load', function() {
+                // 延迟预加载，避免影响初始加载性能
+                setTimeout(preloadLayers, 1000);
+            });
+            
+            // 地图移动或缩放结束后更新预加载
+            map.on('moveend zoomend', function() {
+                // 延迟预加载，避免频繁触发
+                clearTimeout(map._preloadTimeout);
+                map._preloadTimeout = setTimeout(preloadLayers, 500);
+            });
+        }
+        
+        // 初始化图表
+        function initChart() {
+            const ctx = document.getElementById('climateChart').getContext('2d');
+            
+            // 创建空图表
+            climateChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
+                    datasets: []
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '气温与降水量月度统计',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            },
+                            color: '#000000' // 修改为黑色
+                        },
+                        tooltip: {
+                            enabled: true
+                        },
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                boxWidth: 12,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: '气温 (℃)',
+                                color: '#000000', // 修改为黑色
+                                font: {
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                drawOnChartArea: true,
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                color: '#000000' // 设置气温轴坐标字体为黑色
+                            },
+                            min: -60, // 设置气温最小值为-60
+                            max: 30   // 设置气温最大值为30
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '降水量 (mm)',
+                                color: '#000000', // 修改为黑色
+                                font: {
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            },
+                            ticks: {
+                                color: '#000000' // 设置降水量轴坐标字体为黑色
+                            },
+                            min: 0,   // 设置降水量最小值为0
+                            max: 600  // 设置降水量最大值为600
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                color: '#000000' // 设置X轴坐标字体为黑色
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 检查文件类型
+            if (!file.name.toLowerCase().endsWith('.geojson') && !file.name.toLowerCase().endsWith('.json')) {
+                alert('请上传GeoJSON或JSON格式的文件');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const geojsonData = JSON.parse(e.target.result);
+                    loadGeoJSONData(geojsonData);
+                    
+                    // 更新提示信息
+                    document.getElementById('mapInfo').innerHTML = `
+                        <p class="text-sm"><i class="fa fa-check-circle text-green-500 mr-1"></i> 成功加载GeoJSON文件</p>
+                        <p class="text-xs mt-1">点击地图上的站点查看详细数据</p>
+                    `;
+                } catch (error) {
+                    console.error('解析GeoJSON文件失败:', error);
+                    alert('解析GeoJSON文件失败，请检查文件格式');
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // 加载GeoJSON数据到地图
+        function loadGeoJSONDataToMap(geojsonData) {
+            // 清除现有图层
+            if (geoJsonLayer) {
+                map.removeLayer(geoJsonLayer);
+                selectedStations = [];
+                stationMarkers = {};
+                updateSelectedStationsList();
+                updateChart();
+            }
+            
+            // 定义点样式
+            function pointToLayer(feature, latlng) {
+                // 检查是否有必要的属性
+                if (!feature.properties || !feature.properties.name) {
+                    console.warn('Feature缺少必要的name属性', feature);
+                    return L.circleMarker(latlng, {
+                        radius: 6,
+                        fillColor: '#888888',
+                        color: '#333333',
+                        weight: 1,
+                        opacity: 1,
+                        fillOpacity: 0.7
+                    });
+                }
+                
+                // 创建站点标记
+                const marker = L.circleMarker(latlng, {
+                    radius: 6,
+                    fillColor: '#3b82f6',
+                    color: '#1e40af',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.7
+                });
+                
+                // 生成唯一的站点标识，包含name、LATITUDE和LONGITUDE
+                const lat = feature.properties.LATITUDE || feature.properties.lat || feature.properties.Latitude || 0;
+                const lon = feature.properties.LONGITUDE || feature.properties.lon || feature.properties.Longitude || 0;
+                const stationKey = `${feature.properties.name}_${lat.toFixed(4)}_${lon.toFixed(4)}`;
+                
+                // 存储标记引用和数据
+                marker._stationKey = stationKey;
+                marker._stationName = feature.properties.name;
+                marker._latitude = lat;
+                marker._longitude = lon;
+                stationMarkers[stationKey] = marker;
+                stationDataMap[stationKey] = feature.properties;
+                
+                return marker;
+            }
+            
+            // 定义弹出窗口内容
+            function onEachFeature(feature, layer) {
+                if (feature.properties) {
+                    const props = feature.properties;
+                    const stationName = props.name || '未知站点';
+                    
+                    // 创建弹出窗口内容
+                    let popupContent = `
+                        <div class="text-sm">
+                            <h3 class="font-bold text-primary">${stationName}</h3>
+                            <div class="mt-1">
+                                <button class="select-station-btn bg-primary hover:bg-blue-700 text-white text-xs py-1 px-2 rounded" 
+                                        data-station="${stationName}">
+                                    选择此站点
+                                </button>
+                            </div>
+    
+    
+                    `;
+                    
+                    // 添加坐标信息（如果有）
+                    if (feature.geometry && feature.geometry.coordinates) {
+                        const coords = feature.geometry.coordinates;
+                        popupContent += `<p class="text-xs mt-1 text-gray-600">经度: ${coords[0].toFixed(4)}, 纬度: ${coords[1].toFixed(4)}</p>`;
+                    }
+                    
+                    popupContent += '</div>';
+                    
+                    // 绑定弹出窗口
+                    layer.bindPopup(popupContent);
+                    
+                    // 绑定点击事件
+                    layer.on('click', function() {
+                        // 弹出窗口会自动打开
+                    });
+                }
+            }
+            
+            // 添加GeoJSON图层
+            geoJsonLayer = L.geoJSON(geojsonData, {
+                pointToLayer: pointToLayer,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+            
+            // 调整地图视图以适应所有标记
+            try {
+                map.fitBounds(geoJsonLayer.getBounds(), { padding: [20, 20] });
+            } catch (error) {
+                console.warn('无法调整地图视图以适应边界:', error);
+            }
+            
+            // 为弹出窗口中的按钮绑定事件
+            setTimeout(() => {
+                document.querySelectorAll('.select-station-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const stationName = this.getAttribute('data-station');
+                        toggleStationSelection(stationName);
+                    });
+                });
+            }, 100);
+        }
+        
+        // 切换站点选择状态
+        function toggleStationSelection(stationName) {
+            // 查找对应的stationKey
+            let stationKey = null;
+            for (const [key, marker] of Object.entries(stationMarkers)) {
+                if (marker._stationName === stationName) {
+                    stationKey = key;
+                    break;
+                }
+            }
+            
+            if (!stationKey) {
+                console.warn('未找到站点:', stationName);
+                return;
+            }
+            
+            const stationIndex = selectedStations.indexOf(stationName);
+            
+            if (stationIndex === -1) {
+                // 限制最多选择5个站点
+                if (selectedStations.length >= 5) {
+                    alert('最多只能选择5个站点进行对比');
+                    return;
+                }
+                
+                // 添加站点
+                selectedStations.push(stationName);
+                
+                // 更新标记样式 - 已选站点为红色
+                if (stationMarkers[stationKey]) {
+                    const colorIndex = selectedStations.length - 1;
+                    stationMarkers[stationKey].setStyle({
+                        fillColor: '#ef4444', // 红色
+                        color: '#ffffff',
+                        weight: 2
+                    });
+                }
+            } else {
+                // 移除站点
+                selectedStations.splice(stationIndex, 1);
+                
+                // 重置标记样式
+                if (stationMarkers[stationKey]) {
+                    stationMarkers[stationKey].setStyle({
+                        fillColor: '#3b82f6',
+                        color: '#1e40af',
+                        weight: 1
+                    });
+                }
+                
+                // 重新应用颜色到剩余的站点 - 保持红色
+                selectedStations.forEach((name, index) => {
+                    // 查找对应的stationKey
+                    for (const [stationKey, marker] of Object.entries(stationMarkers)) {
+                        if (marker._stationName === name) {
+                            stationMarkers[stationKey].setStyle({
+                                fillColor: '#ef4444', // 红色
+                                color: '#ffffff',
+                                weight: 2
+                            });
+                        }
+                    }
+                });
+            }
+            
+            // 更新选中站点列表
+            updateSelectedStationsList();
+            
+            // 更新图表
+            updateChart();
+        }
+        
+        // 更新选中站点列表
+        function updateSelectedStationsList() {
+            const container = document.getElementById('selectedStations');
+            
+            if (selectedStations.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-500 italic">尚未选择任何站点</p>';
+                return;
+            }
+            
+            let html = '<div class="flex flex-wrap gap-2">';
+            
+            selectedStations.forEach((stationName, index) => {
+                const color = stationColors[index].temp;
+                
+                html += `
+                    <div class="flex items-center bg-gray-100 rounded-full px-3 py-1">
+                        <span class="w-3 h-3 rounded-full mr-1.5" style="background-color: ${color}"></span>
+                        <span class="text-xs font-medium">${stationName}</span>
+                        <button class="ml-1.5 text-gray-500 hover:text-gray-700" 
+                                onclick="toggleStationSelection('${stationName}')">
+                            <i class="fa fa-times-circle"></i>
+                        </button>
+                    </div>
+    
+    
+                `;
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        // 从存储的站点数据中获取站点信息
+        function getStationData(stationName) {
+            // 首先尝试直接通过stationName获取
+            if (stationDataMap[stationName]) {
+                return stationDataMap[stationName];
+            }
+            
+            // 如果没找到，遍历stationDataMap查找匹配的站点
+            for (const [key, data] of Object.entries(stationDataMap)) {
+                if (data.name === stationName) {
+                    return data;
+                }
+            }
+            
+            return null;
+        }
+        
+        // 更新图表
+        function updateChart() {
+            if (!climateChart) return;
+            
+            // 启用/禁用导出按钮
+            document.getElementById('exportBtn').disabled = selectedStations.length === 0;
+            document.getElementById('exportDataBtn').disabled = selectedStations.length === 0;
+            
+            // 清除现有数据集
+            climateChart.data.datasets = [];
+            
+            // 如果没有选中站点，显示空图表
+            if (selectedStations.length === 0) {
+                climateChart.update();
+                return;
+            }
+            
+            // 为每个选中的站点添加数据集
+            selectedStations.forEach((stationName, index) => {
+                const stationData = getStationData(stationName);
+                if (!stationData) return;
+                
+                const colors = stationColors[index];
+                
+                // 提取气温数据
+                const temperatureData = [];
+                for (let i = 1; i <= 12; i++) {
+                    const monthKey = (i < 10 ? '0' : '') + i + '_T';
+                    temperatureData.push(stationData[monthKey] !== undefined ? stationData[monthKey] : null);
+                }
+                
+                // 提取降水数据
+                const precipitationData = [];
+                for (let i = 1; i <= 12; i++) {
+                    const monthKey = (i < 10 ? '0' : '') + i + '_P';
+                    precipitationData.push(stationData[monthKey] !== undefined ? stationData[monthKey] : null);
+                }
+                
+                // 添加气温数据集 - 使用相同颜色
+                climateChart.data.datasets.push({
+                    label: `${stationName} 气温`,
+                    data: temperatureData,
+                    type: 'line',
+                    borderColor: colors.temp,
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointBackgroundColor: colors.temp,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    yAxisID: 'y',
+                    tension: 0.4
+                });
+                
+                // 添加降水数据集 - 使用相同颜色但降低透明度
+                climateChart.data.datasets.push({
+                    label: `${stationName} 降水`,
+                    data: precipitationData,
+                    type: 'bar',
+                    backgroundColor: `${colors.temp}80`, // 使用相同颜色但添加80%透明度
+                    borderColor: colors.temp,
+                    borderWidth: 1,
+                    yAxisID: 'y1',
+                    barPercentage: 0.6,
+                    categoryPercentage: 0.7
+                });
+            });
+            
+            // 更新图表
+            climateChart.update();
+        }
+        
+        // 添加站点图例
+        function addStationLegend() {
+            const legend = L.control({ position: 'bottomright' });
+            
+            legend.onAdd = function(map) {
+                const div = L.DomUtil.create('div', 'info legend bg-white bg-opacity-90 p-3 rounded-lg shadow-md');
+                div.innerHTML = `
+                    <h4 class="text-sm font-semibold mb-2">站点图例</h4>
+                    <div class="flex items-center mb-1">
+                        <span class="w-4 h-4 rounded-full mr-2" style="background-color: #3b82f6; border: 1px solid #1e40af;"></span>
+                        <span class="text-xs">未选站点</span>
+                    </div>
+    
+    
+                    <div class="flex items-center">
+                        <span class="w-4 h-4 rounded-full mr-2" style="background-color: #ef4444; border: 2px solid #ffffff;"></span>
+                        <span class="text-xs">已选站点</span>
+                    </div>
+    
+    
+                `;
+                return div;
+            };
+            
+            legend.addTo(map);
+        }
+        
+        // 导出图表为图片
+        function exportChart() {
+            if (!climateChart) return;
+            
+            // 临时设置白色背景
+            const originalBackgroundColor = climateChart.options.backgroundColor;
+            climateChart.options.backgroundColor = 'white';
+            
+            // 获取图表的数据URL，提高分辨率（2倍）
+            const url = climateChart.toBase64Image('image/png', 2.0);
+            
+            // 恢复原来的背景色
+            climateChart.options.backgroundColor = originalBackgroundColor;
+            
+            // 创建下载链接
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '气象数据图表.png';
+            link.click();
+        }
+        
+        // 导出数据为Excel
+        function exportDataToExcel() {
+            if (selectedStations.length === 0) return;
+            
+            // 准备数据
+            const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+            const data = [];
+            
+            // 添加表头
+            data.push(['站点', '月份', '气温(℃)', '降水量(mm)']);
+            
+            // 添加每个站点的数据
+            selectedStations.forEach(stationKey => {
+                const stationData = getStationData(stationKey);
+                if (!stationData) return;
+                
+                // 获取站点名称（从stationKey中提取或从marker中获取）
+                const marker = stationMarkers[stationKey];
+                const stationName = marker ? marker._stationName : stationKey.split('_')[0];
+                
+                // 添加每个月的数据
+                for (let i = 1; i <= 12; i++) {
+                    const monthKey = (i < 10 ? '0' : '') + i;
+                    const temperature = stationData[monthKey + '_T'] || '';
+                    const precipitation = stationData[monthKey + '_P'] || '';
+                    
+                    data.push([stationName, months[i-1], temperature, precipitation]);
+                }
+            });
+            
+            // 创建工作簿
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            
+            // 添加工作表到工作簿
+            XLSX.utils.book_append_sheet(wb, ws, '气象数据');
+            
+            // 生成Excel文件并下载
+            XLSX.writeFile(wb, '气象数据.xlsx');
+        }
+        
+
+        // 添加经纬网格图层
+        function addGraticuleLayer() {
+            // 1. 特殊纬线
+            const tropicStyle = { color: '#ffd700', weight: 2, dashArray: '10,5' };
+            const polarStyle  = { color: '#0080ff', weight: 2, dashArray: '10,5' };
+            const equatorStyle= { color: '#ff4d4d', weight: 3 };
+
+            // 北回归线、南回归线
+            L.polyline([[23.5,-180],[23.5,180]], tropicStyle).addTo(map);
+            L.polyline([[-23.5,-180],[-23.5,180]], tropicStyle).addTo(map);
+            // 北极圈、南极圈
+            L.polyline([[66.5,-180],[66.5,180]], polarStyle).addTo(map);
+            L.polyline([[-66.5,-180],[-66.5,180]], polarStyle).addTo(map);
+            // 赤道
+            L.polyline([[0,-180],[0,180]], equatorStyle).addTo(map);
+
+            // 2. 常规网格
+            const latStep = 30, lonStep = 60;
+
+            // 纬度圈
+            for (let lat = -90 + latStep; lat < 90; lat += latStep) {
+                L.polyline([[lat,-180],[lat,180]], { color: '#666', weight: 1, opacity: 0.4 }).addTo(map);
+            }
+            // 经度线
+            for (let lon = -180; lon <= 180; lon += lonStep) {
+                L.polyline([[-90,lon],[90,lon]], { color: '#666', weight: 1, opacity: 0.4 }).addTo(map);
+            }
+
+            // 3. 网格文字标签（仅显示在视图边缘）
+            function addGridLabels() {
+                const bounds = map.getBounds();
+                const step = 30;
+                for (let lat = -90; lat <= 90; lat += step) {
+                    if (lat > bounds.getSouth() && lat < bounds.getNorth()) {
+                        L.marker([lat, bounds.getWest() + 0.5], {
+                            icon: L.divIcon({ className: 'grid-label', html: lat + '°', iconSize: [40, 16] })
+                        }).addTo(map);
+                        L.marker([lat, bounds.getEast() - 0.5], {
+                            icon: L.divIcon({ className: 'grid-label', html: lat + '°', iconSize: [40, 16] })
+                        }).addTo(map);
+                    }
+                }
+                for (let lon = -180; lon <= 180; lon += step) {
+                    if (lon > bounds.getWest() && lon < bounds.getEast()) {
+                        L.marker([bounds.getNorth() - 2, lon], {
+                            icon: L.divIcon({ className: 'grid-label', html: lon + '°', iconSize: [40, 16] })
+                        }).addTo(map);
+                        L.marker([bounds.getSouth() + 2, lon], {
+                            icon: L.divIcon({ className: 'grid-label', html: lon + '°', iconSize: [40, 16] })
+                        }).addTo(map);
+                    }
+                }
+            }
+
+            // 初次加载 + 移动后更新
+            addGridLabels();
+            map.on('moveend', () => {
+                map.eachLayer(layer => {
+                    if (layer instanceof L.Marker && layer.options.icon?.options.className === 'grid-label') {
+                        map.removeLayer(layer);
+                    }
+                });
+                addGridLabels();
+            });
+        }
+
+        // 计算站点气候统计指标
+        function calculateStationStats(stationData) {
+            if (!stationData) return null;
+            
+            const temps = [];
+            const precips = [];
+            
+            // 收集所有月份的数据
+            for (let i = 1; i <= 12; i++) {
+                const monthKey = (i < 10 ? '0' : '') + i; // 使用带前导零的格式
+                const temp = stationData[monthKey + '_T'];
+                const precip = stationData[monthKey + '_P'];
+                
+                if (temp !== undefined && temp !== null) temps.push(temp);
+                if (precip !== undefined && precip !== null) precips.push(precip);
+            }
+            
+            // 计算统计指标
+            const minTemp = Math.min(...temps);
+            const maxTemp = Math.max(...temps);
+            const annualPrecip = precips.reduce((sum, val) => sum + val, 0);
+            const aridityIndex = maxTemp > 0 ? annualPrecip / maxTemp : 0;
+            
+            return {
+                minTemp,          // 最冷月气温
+                maxTemp,          // 最热月气温
+                annualPrecip,     // 年降水量
+                aridityIndex      // 干旱指数
+            };
+        }
+        
+        // 应用站点筛选
+        function applyStationFilter() {
+            // 获取筛选条件
+            const minColdTemp = parseFloat(document.getElementById('minColdTemp').value);
+            const maxColdTemp = parseFloat(document.getElementById('maxColdTemp').value);
+            const minHotTemp = parseFloat(document.getElementById('minHotTemp').value);
+            const maxHotTemp = parseFloat(document.getElementById('maxHotTemp').value);
+            const minAnnualPrecip = parseFloat(document.getElementById('minAnnualPrecip').value);
+            const maxAnnualPrecip = parseFloat(document.getElementById('maxAnnualPrecip').value);
+            const minAridityIndex = parseFloat(document.getElementById('minAridityIndex').value);
+            const maxAridityIndex = parseFloat(document.getElementById('maxAridityIndex').value);
+            
+            let visibleCount = 0;
+            
+            // 遍历所有站点
+            Object.keys(stationMarkers).forEach(stationKey => {
+                const stationData = getStationData(stationKey);
+                const stationStats = calculateStationStats(stationData);
+                
+                if (!stationStats) return;
+                
+                // 检查是否满足所有筛选条件
+                const meetsCriteria = 
+                    (isNaN(minColdTemp) || stationStats.minTemp >= minColdTemp) &&
+                    (isNaN(maxColdTemp) || stationStats.minTemp <= maxColdTemp) &&
+                    (isNaN(minHotTemp) || stationStats.maxTemp >= minHotTemp) &&
+                    (isNaN(maxHotTemp) || stationStats.maxTemp <= maxHotTemp) &&
+                    (isNaN(minAnnualPrecip) || stationStats.annualPrecip >= minAnnualPrecip) &&
+                    (isNaN(maxAnnualPrecip) || stationStats.annualPrecip <= maxAnnualPrecip) &&
+                    (isNaN(minAridityIndex) || stationStats.aridityIndex >= minAridityIndex) &&
+                    (isNaN(maxAridityIndex) || stationStats.aridityIndex <= maxAridityIndex);
+                
+                // 更新站点可见性
+                if (stationMarkers[stationKey]) {
+                    if (meetsCriteria) {
+                        map.addLayer(stationMarkers[stationKey]);
+                        visibleCount++;
+                    } else {
+                        map.removeLayer(stationMarkers[stationKey]);
+                    }
+                }
+            });
+            
+            // 更新提示信息
+            document.getElementById('mapInfo').innerHTML = `
+                <p class="text-sm"><i class="fa fa-filter text-primary mr-1"></i> 已筛选出 ${visibleCount} 个站点</p>
+                <p class="text-xs mt-1">点击地图上的站点查看详细数据</p>
+            `;
+            
+            // 关闭筛选对话框
+            document.getElementById('filterModal').classList.add('hidden');
+        }
+        
+        // 重置筛选条件
+        function resetFilters() {
+            document.getElementById('minColdTemp').value = '';
+            document.getElementById('maxColdTemp').value = '';
+            document.getElementById('minHotTemp').value = '';
+            document.getElementById('maxHotTemp').value = '';
+            document.getElementById('minAnnualPrecip').value = '';
+            document.getElementById('maxAnnualPrecip').value = '';
+            document.getElementById('minAridityIndex').value = '';
+            document.getElementById('maxAridityIndex').value = '';
+        }
+        
+        // 事件监听器
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化地图
+            initMap();
+            
+            // 初始化图表
+            initChart();
+            
+            // 文件上传事件
+            document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+            
+            // 导出按钮事件
+            document.getElementById('exportBtn').addEventListener('click', exportChart);
+            
+            // 导出数据按钮事件
+            document.getElementById('exportDataBtn').addEventListener('click', exportDataToExcel);
+            
+            // 筛选按钮事件
+            document.getElementById('filterBtn').addEventListener('click', function() {
+                document.getElementById('filterModal').classList.remove('hidden');
+            });
+            
+            // 关闭筛选对话框
+            document.getElementById('closeFilterBtn').addEventListener('click', function() {
+                document.getElementById('filterModal').classList.add('hidden');
+            });
+            
+            // 应用筛选
+            document.getElementById('applyFilterBtn').addEventListener('click', applyStationFilter);
+            
+            // 重置筛选
+            document.getElementById('resetFilterBtn').addEventListener('click', resetFilters);
+            
+            // 监听弹出窗口打开事件，为按钮绑定事件
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('select-station-btn')) {
+                    const stationName = e.target.getAttribute('data-station');
+                    toggleStationSelection(stationName);
+                }
+            });
+            
+            // 自动加载示例数据
+            loadSampleData();
+        });
+        
+        // 加载示例数据
+        function loadSampleData() {
+            // 使用内置的示例数据（基于sample_data.geojson）
+            const sampleData = {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": "北京",
+                            "1_T": -3.7, "1_P": 3,
+                            "2_T": 0.1, "2_P": 5,
+                            "3_T": 7.5, "3_P": 8,
+                            "4_T": 15.2, "4_P": 20,
+                            "5_T": 21.4, "5_P": 35,
+                            "6_T": 25.8, "6_P": 75,
+                            "7_T": 27.2, "7_P": 185,
+                            "8_T": 25.9, "8_P": 155,
+                            "9_T": 21.0, "9_P": 45,
+                            "10_T": 13.8, "10_P": 20,
+                            "11_T": 5.0, "11_P": 7,
+                            "12_T": -1.5, "12_P": 2
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [116.4, 39.9]
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": "上海",
+                            "1_T": 5.2, "1_P": 45,
+                            "2_T": 6.8, "2_P": 50,
+                            "3_T": 10.1, "3_P": 80,
+                            "4_T": 15.7, "4_P": 100,
+                            "5_T": 20.8, "5_P": 115,
+                            "6_T": 24.5, "6_P": 180,
+                            "7_T": 28.0, "7_P": 145,
+                            "8_T": 27.8, "8_P": 135,
+                            "9_T": 24.5, "9_P": 155,
+                            "10_T": 19.2, "10_P": 65,
+                            "11_T": 13.5, "11_P": 55,
+                            "12_T": 7.8, "12_P": 45
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [121.4, 31.2]
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": "广州",
+                            "1_T": 13.5, "1_P": 40,
+                            "2_T": 15.0, "2_P": 65,
+                            "3_T": 18.2, "3_P": 85,
+                            "4_T": 22.0, "4_P": 175,
+                            "5_T": 25.5, "5_P": 255,
+                            "6_T": 27.3, "6_P": 275,
+                            "7_T": 28.5, "7_P": 235,
+                            "8_T": 28.3, "8_P": 215,
+                            "9_T": 27.0, "9_P": 175,
+                            "10_T": 24.0, "10_P": 85,
+                            "11_T": 19.5, "11_P": 45,
+                            "12_T": 15.5, "12_P": 30
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [113.3, 23.1]
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": "哈尔滨",
+                            "1_T": -18.3, "1_P": 5,
+                            "2_T": -13.2, "2_P": 5,
+                            "3_T": -3.5, "3_P": 10,
+                            "4_T": 8.7, "4_P": 25,
+                            "5_T": 15.8, "5_P": 45,
+                            "6_T": 20.5, "6_P": 90,
+                            "7_T": 23.0, "7_P": 145,
+                            "8_T": 21.5, "8_P": 115,
+                            "9_T": 14.8, "9_P": 55,
+                            "10_T": 5.2, "10_P": 30,
+                            "11_T": -5.5, "11_P": 10,
+                            "12_T": -15.0, "12_P": 5
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [126.6, 45.8]
+                        }
+                    },
+                    {
+                        "type": "Feature",
+                        "properties": {
+                            "name": "乌鲁木齐",
+                            "1_T": -12.0, "1_P": 10,
+                            "2_T": -8.5, "2_P": 10,
+                            "3_T": 0.5, "3_P": 15,
+                            "4_T": 10.2, "4_P": 20,
+                            "5_T": 16.5, "5_P": 25,
+                            "6_T": 21.0, "6_P": 30,
+                            "7_T": 23.5, "7_P": 25,
+                            "8_T": 22.0, "8_P": 20,
+                            "9_T": 16.0, "9_P": 15,
+                            "10_T": 8.0, "10_P": 10,
+                            "11_T": -1.0, "11_P": 10,
+                            "12_T": -9.0, "12_P": 10
+                        },
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": [87.6, 43.8]
+                        }
+                    }
+                ]
+            };
+            
+            // 加载数据到地图
+            loadGeoJSONData(sampleData);
+            
+            // 更新提示信息
+            document.getElementById('mapInfo').innerHTML = `
+                <p class="text-sm"><i class="fa fa-check-circle text-green-500 mr-1"></i> 已加载示例气象站点数据</p>
+                <p class="text-xs mt-1">点击地图上的站点查看详细数据，或上传自定义GeoJSON文件</p>
+            `;
+        }
+        
+        // 加载GeoJSON数据
+        function loadGeoJSONData(geojsonData) {
+            try {
+                loadGeoJSONDataToMap(geojsonData);
+                
+                // 更新提示信息
+                document.getElementById('mapInfo').innerHTML = `
+                    <p class="text-sm"><i class="fa fa-check-circle text-green-500 mr-1"></i> 成功加载气象站点数据</p>
+                    <p class="text-xs mt-1">点击地图上的站点查看详细数据</p>
+                `;
+            } catch (error) {
+                console.error('加载GeoJSON数据失败:', error);
+                alert('加载数据失败，请检查文件格式是否正确');
+            }
+        }
+    </script>
+</body>
+</html>
